@@ -20,3 +20,14 @@ class IsDeveloper(permissions.BasePermission):
     """
     def has_permission(self, request, view):
         return bool(request.user and request.user.is_authenticated and request.user.role == 'DEVELOPER')
+
+class IsAdminOrSelf(permissions.BasePermission):
+    """
+    Allows access to Admin, or the user themselves (for editing profile).
+    """
+    def has_object_permission(self, request, view, obj):
+        # Admin can do anything
+        if request.user and request.user.is_authenticated and request.user.role == 'ADMIN':
+            return True
+        # Users can edit their own profile
+        return obj == request.user

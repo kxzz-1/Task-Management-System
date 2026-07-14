@@ -1,12 +1,15 @@
 from django.db import models
 from django.conf import settings
 
-# Create your models here.
-
 class Project(models.Model):
-    name = models.CharField(max_length=200)
+    STATUS_CHOICES = [
+        ('ACTIVE', 'Active'),
+        ('COMPLETED', 'Completed'),
+    ]
 
+    name = models.CharField(max_length=200)
     description = models.TextField(blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='ACTIVE')
 
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -15,9 +18,16 @@ class Project(models.Model):
         blank=True,
         related_name="created_projects",
     )
+    
+    manager = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="managed_projects",
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
-
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):

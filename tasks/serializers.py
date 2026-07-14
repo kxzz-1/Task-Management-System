@@ -9,7 +9,20 @@ class TaskSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Task
-        fields = '__all__'
+        fields = [
+            'id',
+            'title',
+            'description',
+            'status',
+            'project',
+            'project_name',
+            'assigned_to',
+            'assigned_to_username',
+            'created_by',
+            'created_by_username',
+            'due_date'
+        ]
+        read_only_fields = ['created_by', 'created_by_username']
 
     def validate_assigned_to(self, value):
         if value and value.role in [Role.ADMIN, Role.PM]:
