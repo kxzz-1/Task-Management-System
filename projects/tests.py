@@ -1,15 +1,20 @@
 from rest_framework.test import APITestCase
 from rest_framework import status
 from django.urls import reverse
-from users.models import User, Role
+from users.models import User, CustomRole
 from projects.models import Project
+from tasks.models import Task
 
 class ProjectAPITests(APITestCase):
     def setUp(self):
         # Create users for each role
-        self.admin_user = User.objects.create_user(username='admin', password='pw', role=Role.ADMIN)
-        self.pm_user = User.objects.create_user(username='pm', password='pw', role=Role.PM)
-        self.dev_user = User.objects.create_user(username='dev', password='pw', role=Role.DEVELOPER)
+        admin_role, _ = CustomRole.objects.get_or_create(name='ADMIN')
+        pm_role, _ = CustomRole.objects.get_or_create(name='PM')
+        dev_role, _ = CustomRole.objects.get_or_create(name='DEVELOPER')
+
+        self.admin_user = User.objects.create_user(username='admin', password='pw', role=admin_role)
+        self.pm_user = User.objects.create_user(username='pm', password='pw', role=pm_role)
+        self.dev_user = User.objects.create_user(username='dev', password='pw', role=dev_role)
         
         self.url = reverse('project-list')
 
@@ -34,7 +39,10 @@ class ProjectAPITests(APITestCase):
 
     def test_developer_can_read_projects(self):
         """Test that Developers can read the list of projects."""
-        Project.objects.create(name='Existing Project')
+        project = Project.objects.create(name='Existing Project')
+        
+        # Developers only see projects they have tasks in, so create a task assigned to this developer
+        Task.objects.create(title='Some Task', project=project, assigned_to=self.dev_user)
         
         self.client.force_authenticate(user=self.dev_user)
         response = self.client.get(self.url)

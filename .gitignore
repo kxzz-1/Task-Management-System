@@ -19,3 +19,7 @@ db.sqlite3
 
 # IDE
 .idea/
+
+# rough
+di.py
+

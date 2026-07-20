@@ -59,7 +59,7 @@ const Tasks = () => {
             <span>{task.assigned_to_username || 'Unassigned'}</span>
           </div>
 
-          {task.status !== 'DONE' && (
+          {task.status !== 'DONE' && user?.effective_permissions?.includes('edit_task') && (
             <button 
               className="btn-small" 
               onClick={() => moveTask(task.id, task.status)}
@@ -76,7 +76,7 @@ const Tasks = () => {
     <>
       <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h1>Tasks Board</h1>
-        {(user?.role === 'ADMIN' || user?.role === 'PM') && (
+        {user?.effective_permissions?.includes('create_task') && (
           <button className="btn-primary">Create Task</button>
         )}
       </div>

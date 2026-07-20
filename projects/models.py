@@ -10,6 +10,9 @@ class Project(models.Model):
     name = models.CharField(max_length=200)
     description = models.TextField(blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='ACTIVE')
+    
+    # Dynamic list of allowed task statuses for this project
+    statuses = models.ManyToManyField("tasks.TaskStatus", related_name="projects", blank=True)
 
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,

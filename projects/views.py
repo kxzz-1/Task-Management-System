@@ -10,8 +10,6 @@ from django.db.models import Q
 from .models import Project
 from .serializers import ProjectSerializer
 
-# Create your views here.
-
 class ProjectViewSet(viewsets.ModelViewSet):
     queryset = Project.objects.all()
     serializer_class = ProjectSerializer
@@ -22,16 +20,21 @@ class ProjectViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        if user.is_staff or getattr(user, 'role', None) == 'ADMIN':
+        if not user.is_authenticated:
+            return Project.objects.none()
+            
+        # Role name-based filtering
+        role_name = user.role.name if user.role else ''
+        
+        if user.is_staff or role_name == 'ADMIN':
             return Project.objects.all()
-        elif getattr(user, 'role', None) == 'PM':
+        elif role_name == 'PM':
             # PM can see projects they created OR projects they manage
             return Project.objects.filter(Q(created_by=user) | Q(manager=user)).distinct()
         else: # Developer
             # Developers only see projects they have tasks in
             return Project.objects.filter(tasks__assigned_to=user).distinct()
 
-    # NEW: Secure this API!
     def get_permissions(self):
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
             # Only Admins can modify projects
@@ -42,7 +45,6 @@ class ProjectViewSet(viewsets.ModelViewSet):
         
         return [permission() for permission in permission_classes]
     
-    # NEW: Set the creator automatically
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
 
@@ -50,11 +52,14 @@ class ProjectViewSet(viewsets.ModelViewSet):
     def mark_complete(self, request, pk=None):
         project = self.get_object()
         user = request.user
+        
+        role_name = user.role.name if user.role else ''
+        
         # Only admin or the project's manager can mark it complete
-        if user.role != 'ADMIN' and project.manager != user:
+        if role_name != 'ADMIN' and project.manager != user:
             from rest_framework.exceptions import PermissionDenied
             raise PermissionDenied("Only the project manager or admin can mark this project as complete.")
+            
         project.status = 'COMPLETED'
         project.save()
-        from .serializers import ProjectSerializer
         return Response(ProjectSerializer(project).data)

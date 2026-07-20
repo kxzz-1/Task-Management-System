@@ -6,6 +6,7 @@ import { AuthContext } from '../context/AuthContext';
 const Projects = () => {
   const [projects, setProjects] = useState([]);
   const [pms, setPms] = useState([]);
+  const [taskStatuses, setTaskStatuses] = useState([]);
   const { user } = useContext(AuthContext);
   const navigate = useNavigate();
 
@@ -14,12 +15,14 @@ const Projects = () => {
   const [newName, setNewName] = useState('');
   const [newDescription, setNewDescription] = useState('');
   const [newManager, setNewManager] = useState('');
+  const [newStatuses, setNewStatuses] = useState([]); // Selected status IDs
 
   // Modal State for Editing
   const [editProject, setEditProject] = useState(null);
   const [editName, setEditName] = useState('');
   const [editDescription, setEditDescription] = useState('');
   const [editManager, setEditManager] = useState('');
+  const [editStatuses, setEditStatuses] = useState([]); // Selected status IDs
 
   const fetchProjects = async () => {
     try {
@@ -32,7 +35,6 @@ const Projects = () => {
 
   const fetchPMs = async () => {
     try {
-      // role filter now works on the backend via django-filter
       const response = await api.get('/users/?role=PM');
       setPms(response.data.results || response.data);
     } catch (error) {
@@ -40,9 +42,27 @@ const Projects = () => {
     }
   };
 
+  const fetchTaskStatuses = async () => {
+    try {
+      const response = await api.get('/task-statuses/');
+      const statuses = response.data.results || response.data;
+      setTaskStatuses(statuses);
+      
+      // Auto-check TODO, IN_PROGRESS, DONE by default on load
+      const defaultIds = statuses
+        .filter(s => ['TODO', 'IN_PROGRESS', 'DONE'].includes(s.name))
+        .map(s => s.id);
+      setNewStatuses(defaultIds);
+    } catch (error) {
+      console.error("Failed to fetch task statuses", error);
+    }
+  };
+
   useEffect(() => {
     fetchProjects();
-    if (user?.role === 'ADMIN') {
+    fetchTaskStatuses();
+    const canManageProjects = user?.effective_permissions?.includes('create_project') || user?.effective_permissions?.includes('edit_project');
+    if (canManageProjects) {
       fetchPMs();
     }
   }, [user]);
@@ -53,11 +73,19 @@ const Projects = () => {
       await api.post('/projects/', {
         name: newName,
         description: newDescription,
-        manager: newManager || null
+        manager: newManager || null,
+        statuses: newStatuses
       });
       setNewName('');
       setNewDescription('');
       setNewManager('');
+      
+      // Reset defaults
+      const defaultIds = taskStatuses
+        .filter(s => ['TODO', 'IN_PROGRESS', 'DONE'].includes(s.name))
+        .map(s => s.id);
+      setNewStatuses(defaultIds);
+
       setShowModal(false);
       fetchProjects();
     } catch (error) {
@@ -72,6 +100,7 @@ const Projects = () => {
     setEditName(project.name);
     setEditDescription(project.description);
     setEditManager(project.manager || '');
+    setEditStatuses(project.statuses ? project.statuses.map(s => s.id) : []);
   };
 
   const handleEditProject = async (e) => {
@@ -80,7 +109,8 @@ const Projects = () => {
       await api.patch(`/projects/${editProject.id}/`, {
         name: editName,
         description: editDescription,
-        manager: editManager || null
+        manager: editManager || null,
+        statuses: editStatuses
       });
       setEditProject(null);
       fetchProjects();
@@ -101,6 +131,18 @@ const Projects = () => {
     }
   };
 
+  const handleToggleNewStatus = (id) => {
+    setNewStatuses(prev => 
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    );
+  };
+
+  const handleToggleEditStatus = (id) => {
+    setEditStatuses(prev => 
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    );
+  };
+
   const activeProjects = projects.filter(p => p.status !== 'COMPLETED');
   const completedProjects = projects.filter(p => p.status === 'COMPLETED');
 
@@ -119,14 +161,17 @@ const Projects = () => {
         <div className="kanban-meta" style={{ marginTop: '1rem', flexDirection: 'column', gap: '0.3rem' }}>
           <div>Manager: {project.manager_username || 'None'}</div>
           <div>Created by: {project.created_by_username || 'Unknown'}</div>
+          <div style={{ fontSize: '0.8rem', color: 'var(--text-main)', marginTop: '0.2rem' }}>
+            Workflow: {project.statuses ? project.statuses.map(s => s.name).join(' → ') : 'Default'}
+          </div>
         </div>
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', alignItems: 'flex-end' }} onClick={e => e.stopPropagation()}>
-        {user?.role === 'ADMIN' && project.status !== 'COMPLETED' && (
+        {user?.effective_permissions?.includes('edit_project') && project.status !== 'COMPLETED' && (
           <button className="btn-secondary" style={{ padding: '0.25rem 0.75rem', fontSize: '0.8rem' }} onClick={(e) => openEditModal(project, e)}>Edit</button>
         )}
-        {(user?.role === 'ADMIN' || user?.role === 'PM') && project.status !== 'COMPLETED' && (
+        {user?.effective_permissions?.includes('mark_complete_project') && project.status !== 'COMPLETED' && (
           <button
             className="btn-small"
             style={{ backgroundColor: 'rgba(54,179,126,0.15)', color: '#36B37E', border: '1px solid rgba(54,179,126,0.3)' }}
@@ -146,7 +191,7 @@ const Projects = () => {
     <>
       <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h1>Projects</h1>
-        {user?.role === 'ADMIN' && (
+        {user?.effective_permissions?.includes('create_project') && (
           <button className="btn-primary" onClick={() => setShowModal(true)}>Create Project</button>
         )}
       </div>
@@ -197,10 +242,29 @@ const Projects = () => {
                     ))}
                   </select>
                 </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  <label style={{ color: 'var(--text-main)', fontWeight: 'bold' }}>Select Allowed Task Statuses (Columns) *</label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '5px' }}>
+                    {taskStatuses.map(status => (
+                      <label key={status.id} style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer', fontSize: '0.9rem' }}>
+                        <input
+                          type="checkbox"
+                          checked={newStatuses.includes(status.id)}
+                          onChange={() => handleToggleNewStatus(status.id)}
+                        />
+                        {status.name}
+                      </label>
+                    ))}
+                  </div>
+                  <small style={{ color: 'var(--text-main)', marginTop: '4px' }}>
+                    These selected statuses will define the pipeline/columns on this project's Kanban board.
+                  </small>
+                </div>
               </div>
               <div className="modal-footer">
                 <button type="button" className="btn-secondary" onClick={() => setShowModal(false)}>Cancel</button>
-                <button type="submit" className="btn-primary">Create Project</button>
+                <button type="submit" className="btn-primary" disabled={newStatuses.length === 0}>Create Project</button>
               </div>
             </form>
           </div>
@@ -237,10 +301,26 @@ const Projects = () => {
                     ))}
                   </select>
                 </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  <label style={{ color: 'var(--text-main)', fontWeight: 'bold' }}>Select Allowed Task Statuses (Columns) *</label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '5px' }}>
+                    {taskStatuses.map(status => (
+                      <label key={status.id} style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer', fontSize: '0.9rem' }}>
+                        <input
+                          type="checkbox"
+                          checked={editStatuses.includes(status.id)}
+                          onChange={() => handleToggleEditStatus(status.id)}
+                        />
+                        {status.name}
+                      </label>
+                    ))}
+                  </div>
+                </div>
               </div>
               <div className="modal-footer">
                 <button type="button" className="btn-secondary" onClick={() => setEditProject(null)}>Cancel</button>
-                <button type="submit" className="btn-primary">Save Changes</button>
+                <button type="submit" className="btn-primary" disabled={editStatuses.length === 0}>Save Changes</button>
               </div>
             </form>
           </div>

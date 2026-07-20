@@ -3,7 +3,7 @@ import { NavLink } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 
 const Sidebar = ({ isOpen, onClose }) => {
-  const { user } = useContext(AuthContext);
+  const { user, logout } = useContext(AuthContext);
 
   const handleLinkClick = () => {
     if (onClose) onClose();
@@ -34,13 +34,23 @@ const Sidebar = ({ isOpen, onClose }) => {
         My Profile
       </NavLink>
       
-      {user?.role === 'ADMIN' && (
+      {user?.effective_permissions?.includes('manage_users') && (
         <NavLink 
           to="/users" 
           className={({ isActive }) => isActive ? "sidebar-item active" : "sidebar-item"}
           onClick={handleLinkClick}
         >
           User Management
+        </NavLink>
+      )}
+
+      {user?.effective_permissions?.includes('manage_roles') && (
+        <NavLink 
+          to="/roles" 
+          className={({ isActive }) => isActive ? "sidebar-item active" : "sidebar-item"}
+          onClick={handleLinkClick}
+        >
+          Roles & Permissions
         </NavLink>
       )}
       <div style={{ flex: 1 }}></div>

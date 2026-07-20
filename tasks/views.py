@@ -1,11 +1,12 @@
-from rest_framework import viewsets, permissions
+from rest_framework import viewsets, permissions, status
+from rest_framework.response import Response
 from rest_framework.filters import SearchFilter
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.exceptions import PermissionDenied
 
-from users.permissions import IsAdmin, IsPM, IsDeveloper
-from .models import Task
-from .serializers import TaskSerializer
+from users.permissions import IsAdmin, IsPM, IsDeveloper, HasSystemPermission
+from .models import Task, TaskStatus
+from .serializers import TaskSerializer, TaskStatusSerializer
 
 class TaskViewSet(viewsets.ModelViewSet):
     queryset = Task.objects.all()
@@ -17,7 +18,7 @@ class TaskViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        if user.role == 'DEVELOPER':
+        if user.is_authenticated and user.role and user.role.name == 'DEVELOPER':
             return user.assigned_tasks.all()
         return Task.objects.all()
 
@@ -34,14 +35,12 @@ class TaskViewSet(viewsets.ModelViewSet):
             
         return [permission() for permission in permission_classes]
 
-    # NEW: Restricting what Developers can update
     def perform_update(self, serializer):
         user = self.request.user
         
-        if user.role == 'DEVELOPER':
+        if user.is_authenticated and user.role and user.role.name == 'DEVELOPER':
             # Check what fields they are trying to change
             allowed_fields = {'status'}
-            # self.request.data contains the incoming JSON
             incoming_fields = set(self.request.data.keys())
             
             if not incoming_fields.issubset(allowed_fields):
@@ -50,14 +49,42 @@ class TaskViewSet(viewsets.ModelViewSet):
             if serializer.instance.assigned_to != user:
                 raise PermissionDenied("You can only update tasks assigned to you.")
                 
-        # If all checks pass, save the data
         serializer.save()
 
-        # NEW: Set the creator automatically
     def perform_create(self, serializer):
-        """
-        When a task is created, automatically set the 'created_by' field
-        to the currently logged-in user.
-        """
         serializer.save(created_by=self.request.user)
 
+class TaskStatusViewSet(viewsets.ModelViewSet):
+    queryset = TaskStatus.objects.all().order_by('name')
+    serializer_class = TaskStatusSerializer
+
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [HasSystemPermission('manage_users')()]
+        return [permissions.IsAuthenticated()]
+
+    def destroy(self, request, *args, **kwargs):
+        status_instance = self.get_object()
+        
+        # 1. Prevent deleting core statuses
+        if status_instance.name in ['TODO', 'IN_PROGRESS', 'DONE']:
+            return Response(
+                {"error": "Cannot delete core system statuses."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        # 2. Check if status is used by any project workflow
+        if status_instance.projects.exists():
+            return Response(
+                {"error": "Cannot delete this status because it is linked to one or more projects."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        # 3. Check if status is used by any tasks
+        if status_instance.tasks.exists():
+            return Response(
+                {"error": "Cannot delete this status because tasks are currently using it."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        return super().destroy(request, *args, **kwargs)

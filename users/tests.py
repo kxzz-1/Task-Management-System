@@ -1,15 +1,16 @@
 from rest_framework.test import APITestCase
 from rest_framework import status
 from django.urls import reverse
-from users.models import User, Role
+from users.models import User, CustomRole
 
 class UserAuthenticationTests(APITestCase):
     def setUp(self):
         # Create a test user
+        admin_role, _ = CustomRole.objects.get_or_create(name='ADMIN')
         self.user = User.objects.create_user(
             username='testadmin', 
             password='testpassword123',
-            role=Role.ADMIN
+            role=admin_role
         )
         # URL for token obtain pair
         self.token_url = reverse('token_obtain_pair')

@@ -4,25 +4,32 @@ from rest_framework.response import Response
 from rest_framework.decorators import action
 from rest_framework.filters import SearchFilter
 from django_filters.rest_framework import DjangoFilterBackend
-from users.permissions import IsAdmin, IsAdminOrSelf
+from users.permissions import HasSystemPermission, IsAdminOrSelf
 
-from .models import User
-from .serializers import UserSerializer
+from .models import User, CustomRole, SystemPermission
+from .serializers import UserSerializer, CustomRoleSerializer, SystemPermissionSerializer
+
+import django_filters
+
+class UserFilter(django_filters.FilterSet):
+    role = django_filters.CharFilter(field_name='role__name')
+
+    class Meta:
+        model = User
+        fields = ['role']
 
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
     serializer_class = UserSerializer
 
     filter_backends = [DjangoFilterBackend, SearchFilter]
-    filterset_fields = ['role']
+    filterset_class = UserFilter
     search_fields = ['username', 'first_name', 'last_name', 'email']
 
     def get_permissions(self):
         if self.action in ["create", "destroy"]:
-            # Only admin can create or delete the user
-            permission_classes = [IsAdmin]
+            permission_classes = [HasSystemPermission('manage_users')]
         elif self.action in ["update", "partial_update"]:
-            # Admin can update anyone, users can update themselves
             permission_classes = [IsAdminOrSelf]
         else:
             permission_classes = [permissions.IsAuthenticated]
@@ -44,3 +51,17 @@ class UserViewSet(viewsets.ModelViewSet):
         user.set_password(new_password)
         user.save()
         return Response({'success': 'Password updated successfully.'}, status=status.HTTP_200_OK)
+
+class SystemPermissionViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = SystemPermission.objects.all().order_by('module', 'name')
+    serializer_class = SystemPermissionSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+class CustomRoleViewSet(viewsets.ModelViewSet):
+    queryset = CustomRole.objects.all().order_by('name')
+    serializer_class = CustomRoleSerializer
+
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [HasSystemPermission('manage_roles')()]
+        return [permissions.IsAuthenticated()]
