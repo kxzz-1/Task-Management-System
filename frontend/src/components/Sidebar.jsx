@@ -53,6 +53,16 @@ const Sidebar = ({ isOpen, onClose }) => {
           Roles & Permissions
         </NavLink>
       )}
+
+      {user?.role === 'ADMIN' && (
+        <NavLink 
+          to="/logs" 
+          className={({ isActive }) => isActive ? "sidebar-item active" : "sidebar-item"}
+          onClick={handleLinkClick}
+        >
+          System Logs
+        </NavLink>
+      )}
       <div style={{ flex: 1 }}></div>
       <button 
         onClick={() => { logout(); handleLinkClick(); }}

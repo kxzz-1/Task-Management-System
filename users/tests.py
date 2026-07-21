@@ -54,3 +54,56 @@ class UserAuthenticationTests(APITestCase):
         refresh_response = self.client.post(self.refresh_url, blacklist_data)
         self.assertEqual(refresh_response.status_code, status.HTTP_401_UNAUTHORIZED)
         self.assertEqual(refresh_response.data['code'], 'token_not_valid')
+
+
+from unittest.mock import patch
+from django.db import DatabaseError
+from users.utils import log_event
+
+class LoggingSystemTests(APITestCase):
+    def setUp(self):
+        self.admin_role, _ = CustomRole.objects.get_or_create(name='ADMIN')
+        self.dev_role, _ = CustomRole.objects.get_or_create(name='DEVELOPER')
+        
+        self.admin_user = User.objects.create_user(
+            username='admin_logger', 
+            password='testpassword123',
+            role=self.admin_role
+        )
+        self.dev_user = User.objects.create_user(
+            username='dev_logger', 
+            password='testpassword123',
+            role=self.dev_role
+        )
+        
+        self.logs_url = reverse('logs-list')
+
+    def test_admin_can_access_logs(self):
+        """Test that Admin users can retrieve system logs."""
+        self.client.force_authenticate(user=self.admin_user)
+        log_event(self.admin_user, "TEST_ACTION", "Admin viewed test logs.")
+        
+        response = self.client.get(self.logs_url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['is_database_down'], False)
+        self.assertTrue(len(response.data['logs']) >= 1)
+        self.assertEqual(response.data['logs'][0]['action'], "TEST_ACTION")
+
+    def test_developer_cannot_access_logs(self):
+        """Test that non-Admin users are blocked from logs view."""
+        self.client.force_authenticate(user=self.dev_user)
+        response = self.client.get(self.logs_url)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    @patch('users.views.AuditLog.objects.all')
+    def test_database_down_fallback(self, mock_all):
+        """Test that database failure triggers text file log fallback."""
+        self.client.force_authenticate(user=self.admin_user)
+        
+        # Simulate database query failure
+        mock_all.side_effect = DatabaseError("Database Connection Failed")
+        
+        response = self.client.get(self.logs_url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['is_database_down'], True)
+        self.assertIn('logs', response.data)

@@ -13,22 +13,18 @@ class StatusField(serializers.Field):
     def to_internal_value(self, data):
         if not data:
             return None
-        if isinstance(data, int):
-            try:
-                return TaskStatus.objects.get(id=data)
-            except TaskStatus.DoesNotExist:
-                raise serializers.ValidationError(f"Status ID {data} does not exist.")
+
+        if isinstance(data, int) or (isinstance(data, str) and data.isdigit()):
+            lookup = {'id': int(data)}
         elif isinstance(data, str):
-            try:
-                return TaskStatus.objects.get(name=data)
-            except TaskStatus.DoesNotExist:
-                if data.isdigit():
-                    try:
-                        return TaskStatus.objects.get(id=int(data))
-                    except TaskStatus.DoesNotExist:
-                        pass
-                raise serializers.ValidationError(f"Status name '{data}' does not exist.")
-        raise serializers.ValidationError("Invalid status format.")
+            lookup = {'name': data}
+        else:
+            raise serializers.ValidationError("Invalid status format.")
+
+        try:
+            return TaskStatus.objects.get(**lookup)
+        except TaskStatus.DoesNotExist:
+            raise serializers.ValidationError(f"Status '{data}' does not exist.")
 
 class TaskSerializer(serializers.ModelSerializer):
     project_name = serializers.CharField(source='project.name', read_only=True)

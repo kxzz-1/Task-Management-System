@@ -8,22 +8,20 @@ class RoleField(serializers.Field):
     def to_internal_value(self, data):
         if not data:
             return None
-        if isinstance(data, int):
-            try:
-                return CustomRole.objects.get(id=data)
-            except CustomRole.DoesNotExist:
-                raise serializers.ValidationError(f"Role ID {data} does not exist.")
+
+        if isinstance(data, int) or (isinstance(data, str) and data.isdigit()):
+            lookup = {'id': int(data)}
+            error_msg = f"Role ID {data} does not exist."
         elif isinstance(data, str):
-            try:
-                return CustomRole.objects.get(name=data)
-            except CustomRole.DoesNotExist:
-                if data.isdigit():
-                    try:
-                        return CustomRole.objects.get(id=int(data))
-                    except CustomRole.DoesNotExist:
-                        pass
-                raise serializers.ValidationError(f"Role name '{data}' does not exist.")
-        raise serializers.ValidationError("Invalid role format.")
+            lookup = {'name': data}
+            error_msg = f"Role name '{data}' does not exist."
+        else:
+            raise serializers.ValidationError("Invalid role format.")
+
+        try:
+            return CustomRole.objects.get(**lookup)
+        except CustomRole.DoesNotExist:
+            raise serializers.ValidationError(error_msg)
 
 class UserSerializer(serializers.ModelSerializer):
     role = RoleField(allow_null=True, required=False)

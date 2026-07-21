@@ -44,15 +44,37 @@ class TaskViewSet(viewsets.ModelViewSet):
             incoming_fields = set(self.request.data.keys())
             
             if not incoming_fields.issubset(allowed_fields):
-                raise PermissionDenied("Developers can only update the status field.")
+                from users.exceptions import TMSApiException
+                raise TMSApiException(
+                    detail="Developers can only update the status field.",
+                    status_code=403,
+                    code="developer_status_only"
+                )
             # Ensure they are only updating their OWN task
             if serializer.instance.assigned_to != user:
-                raise PermissionDenied("You can only update tasks assigned to you.")
+                from users.exceptions import TMSApiException
+                raise TMSApiException(
+                    detail="You can only update tasks assigned to you.",
+                    status_code=403,
+                    code="assigned_task_only"
+                )
                 
-        serializer.save()
+        task = serializer.save()
+        from users.utils import log_event
+        log_event(
+            user=user,
+            action="TASK_UPDATED",
+            description=f"Task '{task.title}' updated. Status: {task.status.name if task.status else 'None'}."
+        )
 
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user)
+        task = serializer.save(created_by=self.request.user)
+        from users.utils import log_event
+        log_event(
+            user=self.request.user,
+            action="TASK_CREATED",
+            description=f"Task '{task.title}' created in project '{task.project.name}'."
+        )
 
 class TaskStatusViewSet(viewsets.ModelViewSet):
     queryset = TaskStatus.objects.all().order_by('name')
@@ -87,4 +109,13 @@ class TaskStatusViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
             
-        return super().destroy(request, *args, **kwargs)
+        status_name = status_instance.name
+        response = super().destroy(request, *args, **kwargs)
+        
+        from users.utils import log_event
+        log_event(
+            user=request.user,
+            action="STATUS_DELETED",
+            description=f"Task status '{status_name}' was successfully deleted."
+        )
+        return response

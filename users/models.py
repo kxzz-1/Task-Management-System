@@ -30,3 +30,21 @@ class User(AbstractUser):
         if self.role:
             return self.role.permissions.filter(codename=codename).exists()
         return False
+
+class AuditLog(models.Model):
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    action = models.CharField(max_length=100)
+    description = models.TextField()
+    timestamp = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        username = self.user.username if self.user else "System"
+        return f"{self.timestamp} - {username} - {self.action}"
+
+class SystemErrorLog(models.Model):
+    error_message = models.TextField()
+    traceback_summary = models.TextField(blank=True, null=True)
+    timestamp = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.timestamp} - Error: {self.error_message[:50]}"

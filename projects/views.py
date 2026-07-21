@@ -46,7 +46,13 @@ class ProjectViewSet(viewsets.ModelViewSet):
         return [permission() for permission in permission_classes]
     
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user)
+        project = serializer.save(created_by=self.request.user)
+        from users.utils import log_event
+        log_event(
+            user=self.request.user,
+            action="PROJECT_CREATED",
+            description=f"Project '{project.name}' was created successfully."
+        )
 
     @action(detail=True, methods=['post'], url_path='mark-complete')
     def mark_complete(self, request, pk=None):
@@ -57,9 +63,21 @@ class ProjectViewSet(viewsets.ModelViewSet):
         
         # Only admin or the project's manager can mark it complete
         if role_name != 'ADMIN' and project.manager != user:
-            from rest_framework.exceptions import PermissionDenied
-            raise PermissionDenied("Only the project manager or admin can mark this project as complete.")
+            from users.exceptions import TMSApiException
+            raise TMSApiException(
+                detail="Only the project manager or admin can mark this project as complete.",
+                status_code=403,
+                code="manager_restricted"
+            )
             
         project.status = 'COMPLETED'
         project.save()
+        
+        from users.utils import log_event
+        log_event(
+            user=user,
+            action="PROJECT_COMPLETED",
+            description=f"Project '{project.name}' was marked as COMPLETED."
+        )
+        
         return Response(ProjectSerializer(project).data)
