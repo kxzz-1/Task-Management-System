@@ -22,4 +22,6 @@ db.sqlite3
 
 # rough
 di.py
+redis/
+
 

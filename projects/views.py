@@ -45,6 +45,47 @@ class ProjectViewSet(viewsets.ModelViewSet):
         
         return [permission() for permission in permission_classes]
     
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            project_ids = [p.id for p in page]
+            from users.cache import get_cached_entities
+            serialized_data = get_cached_entities(
+                entity_name='project',
+                entity_ids=project_ids,
+                model_class=Project,
+                serializer_class=ProjectSerializer,
+                request=request
+            )
+            return self.get_paginated_response(serialized_data)
+
+        project_ids = list(queryset.values_list('id', flat=True))
+        from users.cache import get_cached_entities
+        serialized_data = get_cached_entities(
+            entity_name='project',
+            entity_ids=project_ids,
+            model_class=Project,
+            serializer_class=ProjectSerializer,
+            request=request
+        )
+        return Response(serialized_data)
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        from users.cache import get_cached_entities
+        serialized_data = get_cached_entities(
+            entity_name='project',
+            entity_ids=[instance.id],
+            model_class=Project,
+            serializer_class=ProjectSerializer,
+            request=request
+        )
+        if serialized_data:
+            return Response(serialized_data[0])
+        return Response({"error": "Not found"}, status=404)
+
     def perform_create(self, serializer):
         project = serializer.save(created_by=self.request.user)
         from users.utils import log_event
@@ -53,6 +94,17 @@ class ProjectViewSet(viewsets.ModelViewSet):
             action="PROJECT_CREATED",
             description=f"Project '{project.name}' was created successfully."
         )
+
+    def perform_update(self, serializer):
+        project = serializer.save()
+        from users.cache import invalidate_entity
+        invalidate_entity('project', project.id)
+
+    def perform_destroy(self, instance):
+        project_id = instance.id
+        instance.delete()
+        from users.cache import invalidate_entity
+        invalidate_entity('project', project_id)
 
     @action(detail=True, methods=['post'], url_path='mark-complete')
     def mark_complete(self, request, pk=None):
@@ -73,6 +125,10 @@ class ProjectViewSet(viewsets.ModelViewSet):
         project.status = 'COMPLETED'
         project.save()
         
+        # Invalidate cache for this project
+        from users.cache import invalidate_entity
+        invalidate_entity('project', project.id)
+        
         from users.utils import log_event
         log_event(
             user=user,
@@ -81,3 +137,4 @@ class ProjectViewSet(viewsets.ModelViewSet):
         )
         
         return Response(ProjectSerializer(project).data)
+

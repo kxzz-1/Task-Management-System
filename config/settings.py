@@ -202,3 +202,26 @@ LOGGING = {
     },
 }
 
+# Check if Redis is running locally, else fall back to local memory cache (LocMemCache)
+try:
+    import redis
+    r = redis.Redis(host='127.0.0.1', port=6379, socket_connect_timeout=1)
+    r.ping()
+    CACHES = {
+        'default': {
+            'BACKEND': 'django_redis.cache.RedisCache',
+            'LOCATION': 'redis://127.0.0.1:6379/1',
+            'OPTIONS': {
+                'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+            }
+        }
+    }
+except Exception:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+            'LOCATION': 'tms-local-cache',
+        }
+    }
+
+

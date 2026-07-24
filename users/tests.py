@@ -107,3 +107,60 @@ class LoggingSystemTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['is_database_down'], True)
         self.assertIn('logs', response.data)
+
+
+from django.core.cache import cache
+from projects.models import Project
+
+class EntityCachingTests(APITestCase):
+    def setUp(self):
+        cache.clear()
+        
+        self.admin_role, _ = CustomRole.objects.get_or_create(name='ADMIN')
+        self.admin_user = User.objects.create_user(
+            username='admin_cache_tester', 
+            password='testpassword123',
+            role=self.admin_role
+        )
+        
+        self.project = Project.objects.create(
+            name="Cache Test Project",
+            description="Testing cache hits, misses, and invalidations.",
+            created_by=self.admin_user
+        )
+        self.projects_url = reverse('project-list')
+        self.project_detail_url = reverse('project-detail', args=[self.project.id])
+
+    def tearDown(self):
+        cache.clear()
+
+    def test_caching_and_invalidation_flow(self):
+        """Test that project retrieval is cached and updates invalidate the cache."""
+        self.client.force_authenticate(user=self.admin_user)
+        
+        # 1. First fetch: should query DB and populate cache
+        response = self.client.get(self.project_detail_url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        
+        # Verify the item is now in the cache
+        cache_key = f"project_detail:{self.project.id}"
+        cached_data = cache.get(cache_key)
+        self.assertIsNotNone(cached_data)
+        self.assertEqual(cached_data['name'], "Cache Test Project")
+
+        # 2. Modify project: should trigger cache invalidation
+        update_data = {"name": "Cache Test Project Updated"}
+        update_response = self.client.patch(self.project_detail_url, update_data)
+        self.assertEqual(update_response.status_code, status.HTTP_200_OK)
+
+        # Verify that the cache was cleared/invalidated
+        self.assertIsNone(cache.get(cache_key))
+
+        # 3. Fetch again: should fetch updated data and re-cache
+        response2 = self.client.get(self.project_detail_url)
+        self.assertEqual(response2.status_code, status.HTTP_200_OK)
+        self.assertEqual(response2.data['name'], "Cache Test Project Updated")
+        
+        # Cache should be populated again with the updated name
+        self.assertEqual(cache.get(cache_key)['name'], "Cache Test Project Updated")
+

@@ -35,6 +35,47 @@ class TaskViewSet(viewsets.ModelViewSet):
             
         return [permission() for permission in permission_classes]
 
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            task_ids = [t.id for t in page]
+            from users.cache import get_cached_entities
+            serialized_data = get_cached_entities(
+                entity_name='task',
+                entity_ids=task_ids,
+                model_class=Task,
+                serializer_class=TaskSerializer,
+                request=request
+            )
+            return self.get_paginated_response(serialized_data)
+
+        task_ids = list(queryset.values_list('id', flat=True))
+        from users.cache import get_cached_entities
+        serialized_data = get_cached_entities(
+            entity_name='task',
+            entity_ids=task_ids,
+            model_class=Task,
+            serializer_class=TaskSerializer,
+            request=request
+        )
+        return Response(serialized_data)
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        from users.cache import get_cached_entities
+        serialized_data = get_cached_entities(
+            entity_name='task',
+            entity_ids=[instance.id],
+            model_class=Task,
+            serializer_class=TaskSerializer,
+            request=request
+        )
+        if serialized_data:
+            return Response(serialized_data[0])
+        return Response({"error": "Not found"}, status=404)
+
     def perform_update(self, serializer):
         user = self.request.user
         
@@ -60,6 +101,12 @@ class TaskViewSet(viewsets.ModelViewSet):
                 )
                 
         task = serializer.save()
+        
+        # Invalidate task and parent project details caches
+        from users.cache import invalidate_entity
+        invalidate_entity('task', task.id)
+        invalidate_entity('project', task.project_id)
+        
         from users.utils import log_event
         log_event(
             user=user,
@@ -69,12 +116,28 @@ class TaskViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         task = serializer.save(created_by=self.request.user)
+        
+        # Invalidate parent project details cache
+        from users.cache import invalidate_entity
+        invalidate_entity('project', task.project_id)
+        
         from users.utils import log_event
         log_event(
             user=self.request.user,
             action="TASK_CREATED",
             description=f"Task '{task.title}' created in project '{task.project.name}'."
         )
+
+    def perform_destroy(self, instance):
+        task_id = instance.id
+        project_id = instance.project_id
+        instance.delete()
+        
+        # Invalidate task and parent project details caches
+        from users.cache import invalidate_entity
+        invalidate_entity('task', task_id)
+        invalidate_entity('project', project_id)
+
 
 class TaskStatusViewSet(viewsets.ModelViewSet):
     queryset = TaskStatus.objects.all().order_by('name')
